@@ -72,8 +72,8 @@ public class SQLQueryBlast {
 
 
         JavaRDD<String> blastrdd = sc.textFile(input);
-        JavaRDD<String> taxardd = sc.textFile("hdfs:///Projects/TCGA/Libraries/acc_taxid_gi_species.txt");
-        JavaRDD<String> virrdd = sc.textFile("hdfs:///Projects/TCGA/Libraries/VIR_taxa_final.txt");
+        JavaRDD<String> taxardd = sc.textFile("hdfs:///Projects/novaseq/Resources/acc_taxid_gi_species.txt");
+        JavaRDD<String> virrdd = sc.textFile("hdfs:///Projects/novaseq/Resources/VIR_final_taxa.txt");
 
         JavaRDD<BlastRecord> blastRDD = blastrdd.map(f -> {
 
@@ -121,10 +121,9 @@ public class SQLQueryBlast {
         JavaRDD<VirTaxa> virTaxa = virrdd.map(f -> {
             String[] fields = f.split("@");
             VirTaxa virTaxa1 = new VirTaxa();
-            virTaxa1.setGi(fields[0]!=null?fields[0]:null);
-            virTaxa1.setFamily(fields[5]!=null?fields[5]:null);
-            virTaxa1.setGenus(fields[7]!=null?fields[7]:null);
-            virTaxa1.setSpecies(fields[9]!=null?fields[9]:null);
+            virTaxa1.setAcc(fields[0]!=null?fields[0]:null);
+            virTaxa1.setTaxa(fields[1]!=null?fields[1]:null);
+
 
             return virTaxa1;
         });
@@ -146,7 +145,7 @@ public class SQLQueryBlast {
         Dataset<Row> parsedDF = sqlContext.sql(coverage);
 
 
-        Dataset<Row> parsedDFSPecies = parsedDF.join(taxaDF, parsedDF.col("acc").equalTo(taxaDF.col("acc")));
+        Dataset<Row> parsedDFSPecies = parsedDF.join(taxaDF, parsedDF.col("acc").equalTo(taxaDF.col("acc"))).drop(taxaDF.col("acc"));
         //resultDF.show(lines, false);
 
 
@@ -155,16 +154,13 @@ public class SQLQueryBlast {
 
         Dataset<Row> finalResultDF = resultDF.filter(resultDF.col("order").equalTo(1));
 
-        finalResultDF.show();
-
         Dataset<Row> viruses = finalResultDF.filter(finalResultDF.col("organism").equalTo("Viruses"));
-        viruses.show();
 
 
-        Dataset viralSpecies = viruses.join(virDF, viruses.col("gi").equalTo(virDF.col("gi")));
+        Dataset viralSpecies = viruses.join(virDF, viruses.col("acc").equalTo(virDF.col("acc")));
         viralSpecies.registerTempTable("viruses");
 
-        dfToTabDelimited(viralSpecies).coalesce(1).saveAsTextFile(outDir);
+        dfToTabAll(viralSpecies).coalesce(1).saveAsTextFile(outDir);
         /*
         if(outDir!=null){
             JavaRDD<String> resultRDD = dfToTabDelimited(viralSpecies).coalesce(1);
@@ -178,9 +174,22 @@ public class SQLQueryBlast {
         return df.toJavaRDD().map(row ->  {
             //qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore
 
-            String output = row.getAs("qseqid")+"|"+row.getAs("gi")+"|"+row.getAs("acc")+"|"+row.getAs("pident")+"|"
+            String output = row.getAs("qseqid")+"|"+row.getAs("acc")+"|"+row.getAs("pident")+"|"
                     +row.getAs("coverage")+"|"+ row.getAs("qlen")+"|"+row.getAs("evalue")+"|"
-                    +row.getAs("organism") +"|"+ row.getAs("family")+"|"+ row.getAs("genus")+"|"+ row.getAs("species");
+                    +row.getAs("taxa");
+
+            return output;
+        });
+    }
+
+
+    private static JavaRDD<String> dfToTabAll(Dataset<Row> df) {
+        return df.toJavaRDD().map(row ->  {
+            //qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore
+
+            String output = row.getAs("qseqid")+"|"+row.getAs("acc")+"|"+row.getAs("pident")+"|"
+                    +row.getAs("coverage")+"|"+ row.getAs("qlen")+"|"+row.getAs("evalue")+"|"
+                    +row.getAs("taxa");
 
             return output;
         });

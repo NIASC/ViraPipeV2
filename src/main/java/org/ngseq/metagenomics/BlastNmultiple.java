@@ -7,36 +7,19 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hdfs.DFSClient;
 import org.apache.hadoop.hdfs.DFSInputStream;
-import org.apache.hadoop.io.LongWritable;
-import org.apache.hadoop.io.Text;
-import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
 import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
-
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStreamReader;
 import org.apache.spark.broadcast.Broadcast;
-import org.apache.spark.sql.Dataset;
-import org.apache.spark.sql.Row;
-import org.apache.spark.sql.SQLContext;
-import scala.Tuple2;
 
 import java.io.*;
 import java.net.URI;
 import java.util.ArrayList;
-import java.util.logging.Level;
+import java.util.Arrays;
+import java.util.List;
 import java.util.logging.Logger;
 
-/**
- spark-submit  --master local[${NUM_EXECUTORS}] --executor-memory 10g  --class org.ngseq.metagenomics.BlastN metagenomics-0.9-jar-with-dependencies.jar -in ${OUTPUT_PATH}/${PROJECT_NAME}_blast_nonhuman -out ${OUTPUT_PATH}/${PROJECT_NAME}_blast_final -db ${BLAST_DATABASE} -outfmt 6 -num_threads ${BLAST_THREADS}
-
- spark-submit --master yarn --deploy-mode ${DEPLOY_MODE} --conf spark.dynamicAllocation.enabled=true --conf spark.dynamicAllocation.cachedExecutorIdleTimeout=100 --conf spark.shuffle.service.enabled=true --conf spark.scheduler.mode=${SCHEDULER_MODE} --conf spark.task.maxFailures=100 --conf spark.yarn.max.executor.failures=100 --executor-memory 10g --conf spark.yarn.executor.memoryOverhead=10000  --class org.ngseq.metagenomics.BlastN metagenomics-0.9-jar-with-dependencies.jar -in ${OUTPUT_PATH}/${PROJECT_NAME}_blast_nonhuman -out ${OUTPUT_PATH}/${PROJECT_NAME}_blast_final -db ${BLAST_DATABASE} -outfmt 6 -num_threads ${BLAST_THREADS}
-
- */
-public class BlastN {
+public class BlastNmultiple {
     private static final Logger LOG = Logger.getLogger(BlastN.class.getName());
 
     public static void main(String[] args) throws IOException {
@@ -95,27 +78,28 @@ public class BlastN {
         SparkConf conf = new SparkConf().setAppName("BlastN");
         JavaSparkContext sc = new JavaSparkContext(conf);
         sc.hadoopConfiguration().set("textinputformat.record.delimiter", ">");
+        FileSystem filesystem = FileSystem.get(new Configuration());
+        FileStatus[] dirs = filesystem.listStatus(new Path(input));
+        for (FileStatus dir : dirs) {
+            String current = dir.getPath().toUri().getRawPath();
 
-
-        FileSystem fs = FileSystem.get(new Configuration());
-
-        FileStatus[] st = fs.listStatus(new Path(input));
-        ArrayList<String> splitFileList = new ArrayList<>();
-        for (int i=0;i<st.length;i++){
-            if(!st[i].isDirectory()){
-                if(st[i].getLen()>1){
-                    splitFileList.add(st[i].getPath().toUri().getRawPath().toString());
-                    System.out.println(st[i].getPath().toUri().getRawPath().toString());
+            FileStatus[] st = filesystem.listStatus(new Path(current));
+            ArrayList<String> splitFileList = new ArrayList<>();
+            for (int i = 0; i < st.length; i++) {
+                if (!st[i].isDirectory()) {
+                    if (st[i].getLen() > 1) {
+                        splitFileList.add(st[i].getPath().toUri().getRawPath().toString());
+                        System.out.println(st[i].getPath().toUri().getRawPath().toString());
+                    }
                 }
             }
-        }
 
-        JavaRDD<String> fastaFilesRDD = sc.parallelize(splitFileList, splitFileList.size());
-        Broadcast<String> bs = sc.broadcast(fs.getUri().toString());
-        System.out.println(" varibale - broadcast bs: " + fs.getUri().toString());
-        JavaRDD<String> outRDD = fastaFilesRDD.mapPartitions(f -> {
-            Process process;
-            String fname = f.next();
+            JavaRDD<String> fastaFilesRDD = sc.parallelize(splitFileList, splitFileList.size());
+            Broadcast<String> bs = sc.broadcast(filesystem.getUri().toString());
+            System.out.println(" varibale - broadcast bs: " + filesystem.getUri().toString());
+            JavaRDD<String> outRDD = fastaFilesRDD.mapPartitions(f -> {
+                Process process;
+                String fname = f.next();
 
 //	    Path srcInHdfs = new Path(fname);
 //	    Path destInTmp = new Path("file:///tmp/" + srcInHdfs.getName());
@@ -126,40 +110,40 @@ public class BlastN {
             srcInHdfs.saveAsTextFile("file:///tmp/" + filename); */
 
 
-            DFSClient client = new DFSClient(URI.create(bs.getValue()), new Configuration());
+                DFSClient client = new DFSClient(URI.create(bs.getValue()), new Configuration());
 
-            DFSInputStream hdfsstream = client.open(fname);
-            String blastn_cmd;
+                DFSInputStream hdfsstream = client.open(fname);
+                String blastn_cmd;
 
 //                blastn_cmd = "cat /tmp/"+srcInHdfs.getName()+" | blastn -db "+db+" -num_threads "+num_threads+" -task megablast -word_size "+word_size+" -max_target_seqs "+max_target_seqs+" -evalue "+evalue+" " + ((show_gis == true) ? "-show_gis " : "") + " -outfmt "+outfmt;
 //            else
 //                blastn_cmd = "cat /tmp/"+srcInHdfs.getName()+" | blastn -db "+db+" -num_threads "+num_threads+" -word_size "+word_size+" -gapopen "+gapopen+" -gapextend "+gapextend+" -penalty "+penalty+" -reward "+reward+" -max_target_seqs "+max_target_seqs+" -evalue "+evalue+" " + ((show_gis == true) ? "-show_gis " : "") + " -outfmt "+outfmt;
 
-            if(task.equalsIgnoreCase("megablast"))
-                blastn_cmd = bin+" -db "+db+" -num_threads "+num_threads+" -task megablast -word_size "+word_size+" -max_target_seqs "+max_target_seqs+" -evalue "+evalue+" " + ((show_gis == true) ? "-show_gis " : "") + " -outfmt "+outfmt;
-            else
-                blastn_cmd = bin+" -db "+db+" -num_threads "+num_threads+" -word_size "+word_size+" -gapopen "+gapopen+" -gapextend "+gapextend+" -penalty "+penalty+" -reward "+reward+" -max_target_seqs "+max_target_seqs+" -evalue "+evalue+" " + ((show_gis == true) ? "-show_gis " : "") + " -outfmt "+outfmt;
+                if (task.equalsIgnoreCase("megablast"))
+                    blastn_cmd = bin + " -db " + db + " -num_threads " + num_threads + " -task megablast -word_size " + word_size + " -max_target_seqs " + max_target_seqs + " -evalue " + evalue + " " + ((show_gis == true) ? "-show_gis " : "") + " -outfmt " + outfmt;
+                else
+                    blastn_cmd = bin + " -db " + db + " -num_threads " + num_threads + " -word_size " + word_size + " -gapopen " + gapopen + " -gapextend " + gapextend + " -penalty " + penalty + " -reward " + reward + " -max_target_seqs " + max_target_seqs + " -evalue " + evalue + " " + ((show_gis == true) ? "-show_gis " : "") + " -outfmt " + outfmt;
 
-            System.out.println(blastn_cmd);
+                System.out.println(blastn_cmd);
 
-            ProcessBuilder pb = new ProcessBuilder("/bin/bash", "-c", blastn_cmd);
-            process = pb.start();
+                ProcessBuilder pb = new ProcessBuilder("/bin/bash", "-c", blastn_cmd);
+                process = pb.start();
 
-            BufferedReader hdfsinput = new BufferedReader(new InputStreamReader(hdfsstream));
-            BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(process.getOutputStream()));
-            String line;
-            while ((line = hdfsinput.readLine()) != null) {
-                writer.write(line);
-                writer.newLine();
-            }
-            writer.close();
+                BufferedReader hdfsinput = new BufferedReader(new InputStreamReader(hdfsstream));
+                BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(process.getOutputStream()));
+                String line;
+                while ((line = hdfsinput.readLine()) != null) {
+                    writer.write(line);
+                    writer.newLine();
+                }
+                writer.close();
 
-            BufferedReader in = new BufferedReader(new InputStreamReader(process.getInputStream()));
-            String bline;
-            ArrayList<String> out = new ArrayList<String>();
-            while ((bline = in.readLine()) != null) {
-                out.add(bline);
-            }
+                BufferedReader in = new BufferedReader(new InputStreamReader(process.getInputStream()));
+                String bline;
+                ArrayList<String> out = new ArrayList<String>();
+                while ((bline = in.readLine()) != null) {
+                    out.add(bline);
+                }
 
             /*
             BufferedReader err = new BufferedReader(new InputStreamReader(process.getErrorStream()));
@@ -168,7 +152,7 @@ public class BlastN {
                 out.add(e);
             }
             */
-            in.close();
+                in.close();
             /*
             File fLocal = new File("/tmp/"+filename);
             try {
@@ -177,20 +161,24 @@ public class BlastN {
                 System.err.println("Could not delete local file:/tmp/" + filename);
             } "*/
 
-            return out.iterator();
-        });
+                return out.iterator();
+            });
 
+            String dr = dir.getPath().toUri().getRawPath();
+            List<String> items = Arrays.asList(dr.split("\\s*/\\s*"));
 
+            String name = items.get(items.size() - 1);
 
+            if (taxname != "")
+                outRDD.filter(res -> {
+                    String[] fields = res.split("\t");
+                    String taxonomy = fields[res.length()];
+                    return taxonomy.equalsIgnoreCase(taxname);
+                }).saveAsTextFile(output);
+            else
+                outRDD.saveAsTextFile(output + "/" + name);
 
-        if(taxname!="")
-            outRDD.filter(res ->{
-                String[] fields = res.split("\t");
-                String taxonomy = fields[res.length()];
-                return taxonomy.equalsIgnoreCase(taxname);
-            }).saveAsTextFile(output);
-        else
-            outRDD.saveAsTextFile(output);
+        }
 
         sc.stop();
     }

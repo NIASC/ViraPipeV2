@@ -22,10 +22,14 @@ public class AssemblyOutput {
 
         Option out = new Option("out", true, "output");
         Option folderIn = new Option("in", true, "");
+        Option parts = new Option("partitions", true, "");
+
 
 
         options.addOption(out);
         options.addOption(folderIn);
+        options.addOption(parts);
+
         CommandLineParser parser = new BasicParser();
         CommandLine cmd = null;
         try {
@@ -39,6 +43,8 @@ public class AssemblyOutput {
         String output = (cmd.hasOption("out") == true) ? cmd.getOptionValue("out") : null;
 
         String in = (cmd.hasOption("in") == true) ? cmd.getOptionValue("in") : null;
+        String partitions = (cmd.hasOption("partitions") == true) ? cmd.getOptionValue("partitions") : null;
+
 
 
         JavaRDD<String> aggregateRDD = sc.textFile(in);
@@ -51,7 +57,7 @@ public class AssemblyOutput {
 
             String id = fseq[0].split("_")[0];
             //Give unique id for sequence
-            String seq_id = id+"_"+UUID.randomUUID().toString();
+            String seq_id = UUID.randomUUID().toString();
             String seq = fseq[1];
             int Ncount = seq.length() - seq.replace("N", "").length();
 
@@ -68,7 +74,7 @@ public class AssemblyOutput {
 
 
 
-        crdd.repartition(100).saveAsTextFile(output);
+        crdd.repartition(Integer.valueOf(partitions)).saveAsTextFile(output);
         sc.stop();
     }
 }

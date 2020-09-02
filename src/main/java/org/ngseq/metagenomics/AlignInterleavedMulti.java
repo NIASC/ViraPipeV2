@@ -125,9 +125,11 @@ public class AlignInterleavedMulti {
           ArrayList<Tuple2<Text, SequencedFragment>> filtered = new ArrayList<Tuple2<Text, SequencedFragment>>();
           Arrays.asList(aligns).forEach(aln -> {
             String[] fields = aln.split("\\t");
+            /*
             for (String ss: fields) {
               System.out.println("fields + " + ss);
             }
+            */
             int flag = Integer.parseInt(fields[1]);
 
 

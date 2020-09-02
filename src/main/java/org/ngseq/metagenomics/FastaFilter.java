@@ -24,6 +24,7 @@ public class FastaFilter {
 
     Options options = new Options();
     options.addOption(new Option( "out", true, "" ));
+    options.addOption(new Option( "delimeter", true, "" ));
     options.addOption(new Option( "fasta", true, "Path to fasta sequences" ));
     options.addOption(new Option( "filter", true, "Blast format supported (one record per line, first column must be the corresponding sequence ID, columns delimited by tab)" ));
 
@@ -43,15 +44,18 @@ public class FastaFilter {
     String input = (cmd.hasOption("fasta")==true)? cmd.getOptionValue("fasta"):null;
     String input2 = (cmd.hasOption("filter")==true)? cmd.getOptionValue("filter"):null;
     String output = (cmd.hasOption("out")==true)? cmd.getOptionValue("out"):null;
+    String delimeter = (cmd.hasOption("delimeter")==true)? cmd.getOptionValue("delimeter"):null;
+
 
     SparkConf conf = new SparkConf().setAppName("FastaFilter");
     JavaSparkContext sc = new JavaSparkContext(conf);
 
     JavaRDD<String> blastRDD = sc.textFile(input2).map(blast -> {
-      String[] s = blast.trim().split("\t");
+      String[] s = blast.trim().split(delimeter);
       return s[0];
     });
     List<String> ids = blastRDD.collect();
+
     sc.hadoopConfiguration().set("textinputformat.record.delimiter", ">");
     //JavaPairRDD<Text, ReferenceFragment> inRDD = sc.newAPIHadoopFile(input, FastaInputFormat.class, Text.class, ReferenceFragment.class, sc.hadoopConfiguration());
 
@@ -62,9 +66,9 @@ public class FastaFilter {
         return new Tuple2<String, String>( split[0], split[1]);
       }
       else return new Tuple2<String, String>("","");
-    }).filter(fasta -> !ids.contains(fasta._1.toString()) && !fasta._1.isEmpty());
+    }).filter(fasta -> ids.contains(fasta._1.toString()));
 
-    fastaRDD.map(z-> ">"+z._1+"\n"+z._2()).saveAsTextFile(output);
+    fastaRDD.map(z-> ">"+z._1+"\n"+z._2()).coalesce(1).saveAsTextFile(output);
     sc.stop();
   }
 }

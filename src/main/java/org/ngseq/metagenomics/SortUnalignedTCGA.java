@@ -38,10 +38,14 @@ public class SortUnalignedTCGA {
 
         Option out = new Option("out", true, "output");
         Option folderIn = new Option("in", true, "");
+        Option format = new Option("format", true, "");
+
 
 
         options.addOption(out);
         options.addOption(folderIn);
+        options.addOption(format);
+
         CommandLineParser parser = new BasicParser();
         CommandLine cmd = null;
         try {
@@ -55,6 +59,8 @@ public class SortUnalignedTCGA {
         String output = (cmd.hasOption("out") == true) ? cmd.getOptionValue("out") : null;
 
         String in = (cmd.hasOption("in") == true) ? cmd.getOptionValue("in") : null;
+        String outFormat = (cmd.hasOption("format") == true) ? cmd.getOptionValue("format") : null;
+
 
         FileSystem fs = FileSystem.get(new Configuration());
         FileStatus[] dirs = fs.listStatus(new Path(in));
@@ -69,6 +75,7 @@ public class SortUnalignedTCGA {
                 read.setSequence(record._2.getSequence().toString());
                 read.setQuality(record._2.getQuality().toString());
 
+
                 return read;
             });
 
@@ -78,13 +85,11 @@ public class SortUnalignedTCGA {
             String tempName = String.valueOf((new Date()).getTime());
 
             // find pair ends
-            Dataset pairEndKeys = df.groupBy("key").agg(count("*").as("count")).where("count > 1");
+            Dataset pairEndKeys = df.groupBy("key").agg(count("*").as("count")).where("count == 2");
 
             Dataset<Row> pairDF = pairEndKeys.join(df, pairEndKeys.col("key").equalTo(df.col("key"))).drop(pairEndKeys.col("key"));
 
-            Dataset<Row> sortedPairDF = pairDF.sort("key");
-
-
+            Dataset<Row> sortedPairDF = pairDF.sort("key","read");
             // name of the case
             String dr = dir.getPath().toUri().getRawPath();
             List<String> items = Arrays.asList(dr.split("\\s*/\\s*"));
@@ -92,9 +97,15 @@ public class SortUnalignedTCGA {
             String name = items.get(items.size() - 1);
 
 
-            // save normalized case
-            //dfToFasta(sortedPairDF).coalesce(1).saveAsTextFile(output + "/" + name);
-            dfToFastqRDD(sortedPairDF).coalesce(1).saveAsNewAPIHadoopFile(output + "/" + name, Text.class, SequencedFragment.class, FastqOutputFormat.class, sc.hadoopConfiguration());
+
+
+            if (outFormat.equals("fq")){
+                dfToFastqRDD(sortedPairDF).coalesce(1).saveAsNewAPIHadoopFile(output + "/" + name, Text.class, SequencedFragment.class, FastqOutputFormat.class, sc.hadoopConfiguration());
+            } else {
+                // save normalized case
+                dfToFasta(sortedPairDF).coalesce(1).saveAsTextFile(output + "/" + name);
+
+            }
 
         }
 
@@ -105,23 +116,17 @@ public class SortUnalignedTCGA {
           FileStatus[] files = fs.listStatus(dir.getPath());
               for (int i = 0; i < files.length; i++) {
                   String fn = files[i].getPath().getName();
-                  System.out.println("this is fn " + fn);
 
                   if (!fn.equalsIgnoreCase("_SUCCESS")) {
                       String folder = dir.getPath().toUri().getRawPath();
-                      System.out.println("folder " + folder);
-                      String fileName = folder.substring(folder.lastIndexOf("/") + 1) + ".fq";
-
+                      String fileName = folder.substring(folder.lastIndexOf("/") + 1) + "." + outFormat;
 
                       Path srcPath = new Path(files[i].getPath().toUri().getRawPath());
                       String newPath = dir.getPath().getParent().toUri().getRawPath() + "/" + fileName;
-                      System.out.println("this is new path " + newPath);
                       Path dstPath = new Path(newPath);
-
 
                       FileUtil.copy(fs, srcPath, fs, dstPath, true, new Configuration());
                       fs.delete(new Path(dir.getPath().toUri().getRawPath()));
-                      System.out.println("*" + files[i].getPath().toUri().getRawPath());
                   }
 
           }
@@ -153,10 +158,16 @@ public class SortUnalignedTCGA {
     }
     private static JavaPairRDD<Text, SequencedFragment> dfToFastqRDD(Dataset<Row> df) {
         return df.toJavaRDD().mapToPair(row ->  {
-            Text t = new Text((String) row.getAs("key"));
+            String name = row.getAs("key");
+
+            if (row.getAs("read").equals(1)) {
+                name = name + "/1";
+            } else {
+                name = name + "/2";
+            }
+            Text t = new Text(name);
             SequencedFragment sf = new SequencedFragment();
             sf.setSequence(new Text((String) row.getAs("sequence")));
-            sf.setRead((Integer) row.getAs("read"));
             sf.setQuality(new Text((String) row.getAs("quality")));
 
             return new Tuple2<Text, SequencedFragment>(t, sf);

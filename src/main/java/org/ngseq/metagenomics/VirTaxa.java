@@ -1,35 +1,29 @@
 package org.ngseq.metagenomics;
 
 import org.apache.spark.annotation.Private;
-import scala.tools.nsc.doc.model.Public;
 
 import java.io.Serializable;
 
 public class VirTaxa implements Serializable {
 
 
-    private String gi;
-    private String family;
-    private String genus;
-    private String species;
+    private String acc;
+    private String taxa;
 
-    public String getGi() {
-        return gi;
+
+    public String getAcc() {
+        return acc;
     }
 
-    public void setGi(String gi) {
-        this.gi = gi;
+    public void setAcc(String acc) {
+        this.acc = acc;
     }
 
-    public String getFamily() {return family;}
+    public String getTaxa() {return taxa;}
 
-    public void setFamily(String family) {this.family= family;}
+    public void setTaxa(String taxa) {this.taxa= taxa;}
 
-    public String getGenus() {return genus;}
-    public void setGenus(String genus) {this.genus = genus;}
 
-    public String getSpecies() {return species;}
-    public void setSpecies(String species) {this.species = species;}
 
 
 }

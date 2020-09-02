@@ -26,10 +26,11 @@ public class EstimateReadsV2 {
         Option pathOpt = new Option("in", true, "Path to fastq file in hdfs.");    //gmOpt.setRequired(true);
         Option pathVir = new Option("pathVir", true, "Path to fastq file in hdfs.");    //gmOpt.setRequired(true);
         Option outOpt = new Option("out", true, "");
+        Option outGroupped = new Option("outG", true, "");
         options.addOption(pathOpt);
         options.addOption(outOpt);
         options.addOption(pathVir);
-
+        options.addOption(outGroupped);
 
         HelpFormatter formatter = new HelpFormatter();
         formatter.printHelp("spark-submit <spark specific args>", options, true);
@@ -42,38 +43,39 @@ public class EstimateReadsV2 {
             System.err.println("Parsing failed.  Reason: " + exp.getMessage());
         }
         String input = cmd.getOptionValue("in");
-        String blastViruses = cmd.getOptionValue("pathVir");
         String outDir = (cmd.hasOption("out") == true) ? cmd.getOptionValue("out") : null;
+        String outDirGrouped = (cmd.hasOption("outG") == true) ? cmd.getOptionValue("outG") : null;
 
         Dataset countedReads = registerCountedReads(input, sc, sqlContext);
         countedReads.registerTempTable("CountedReads");
-        countedReads.show();
 
-        Dataset viruses = registerBlastViruses(blastViruses, sc, sqlContext);
-        viruses.registerTempTable("Viruses");
 
-        viruses.show();
+        Dataset countedReads2 = countedReads.filter(countedReads.col("count").$greater(4));
 
-        String sql = "SELECT CountedReads.contig, CountedReads.count, Viruses.gi, Viruses.length, CountedReads.case, Viruses.family FROM CountedReads " +
-                "LEFT JOIN Viruses ON CountedReads.contig = Viruses.contig " +
-                "ORDER BY CountedReads.case";
 
-        Dataset combined = sqlContext.sql(sql);
-        combined.show();
-        Dataset filtered = combined.filter(combined.col("family").notEqual("null"));
+
+        //Dataset filtered = combined.filter(combined.col("family").notEqual("null"));
+
+        Dataset pivotNAs = countedReads2.groupBy("contig").pivot("case").agg(org.apache.spark.sql.functions.sum(countedReads2.col("count")).as("reads"));
+
+
+        Dataset pivot = pivotNAs.na().fill(0);
+        Dataset sorted = pivot.sort(pivot.col("contig"));
+
+        sorted.coalesce(1).write().format("com.databricks.spark.csv").option("header", "true").save(outDir);
+
 
         /*
         JavaRDD<String> combinedRDD = dfToTabDelimited(combined);
         JavaRDD<String> filteredRDD = combinedRDD.filter(x -> !x.contains("null"));
         filteredRDD.saveAsTextFile(outDir);
-        */
-        Dataset groupped = filtered.groupBy("contig").agg(
-                org.apache.spark.sql.functions.sum(combined.col("count")).as("reads"),
+         */
+        Dataset groupped = countedReads2.groupBy("contig").agg(
+                org.apache.spark.sql.functions.sum(countedReads.col("count")).as("reads"),
                 org.apache.spark.sql.functions.count("case").as("cases"));
 
-        groupped.show(100);
-        groupped.registerTempTable("final");
-        dfToTabDelimited(groupped).saveAsTextFile(outDir);
+          groupped.registerTempTable("final");
+          dfToTabDelimited(groupped).coalesce(1).saveAsTextFile(outDirGrouped);
     }
 
     private static JavaRDD<String> dfToTabDelimited(Dataset<Row> df) {
@@ -116,7 +118,7 @@ public class EstimateReadsV2 {
         JavaRDD<String> contigs = sc.textFile(input);
 
         // The schema is encoded in a string
-        String schemaString = "contig gi acc identity coverage length e-value organism family subfamily subfamilyType";
+        String schemaString = "contig acc identity coverage length e-value taxa";
 
         // Generate the schema based on the string of schema
         List<StructField> fields = new ArrayList<StructField>();
@@ -129,7 +131,7 @@ public class EstimateReadsV2 {
         JavaRDD<Row> rowRDD = contigs.map(
                 (Function<String, Row>) record -> {
                     String[] fields1 = record.split("\\|");
-                    return RowFactory.create(fields1[0], fields1[1], fields1[2], fields1[3], fields1[4], fields1[5], fields1[6], fields1[7], fields1[8], fields1[9], fields1[10]);
+                    return RowFactory.create(fields1[0], fields1[1], fields1[2], fields1[3], fields1[4], fields1[5], fields1[6]);
                 });
 
         // Apply the schema to the RDD.

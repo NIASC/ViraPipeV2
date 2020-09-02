@@ -19,6 +19,9 @@ import java.util.stream.Collectors;
 /**
  * Created by zurbzh on 2018-10-10.
  */
+
+
+
 public class KmerCounting {
 
 
@@ -28,12 +31,10 @@ public class KmerCounting {
     public static void main(String[] args) throws IOException {
         SparkConf conf = new SparkConf().setAppName("KmerCounting");
         JavaSparkContext sc = new JavaSparkContext(conf);
-        SQLContext sqlContext = new SQLContext(sc);
-
 
         Options options = new Options();
 
-        Option pathOpt = new Option("in", true, "Path to file in hdfs.");
+        Option pathOpt = new Option("in", true, "Path to file in hdfs."); // csv file: id, sequence, label
 
         Option outOpt = new Option("out", true, "HDFS path for output files.");
 
